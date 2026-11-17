@@ -108,6 +108,8 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 .actions{display:flex;gap:8px}
 .actions .btn:last-child{flex:1}
 .check-label{display:flex;align-items:center;gap:8px;font-size:14px}
+.repeat-del{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.repeat-del .actions .btn{flex:1}
 .loc{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:var(--ink);text-decoration:none;overflow-wrap:anywhere;padding:3px 0}
 .map-go{font-size:11px;font-weight:700;color:#3A2E00;background:#FEE500;border-radius:999px;padding:2px 8px;white-space:nowrap}
 
@@ -246,11 +248,23 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
     <label class="f" for="eStart">시작 시간<input class="input" type="text" inputmode="numeric" id="eStart" placeholder="예: 20:00" maxlength="5" autocomplete="off"></label>
     <label class="f" for="eFinish">끝나는 시간<input class="input" type="text" inputmode="numeric" id="eFinish" placeholder="예: 22:00" maxlength="5" autocomplete="off"></label>
   </div>
+  <div class="inline">
+    <label class="f" for="eRepeat">반복<select class="input" id="eRepeat"></select></label>
+    <label class="f" for="eUntil" id="untilRow">반복 끝나는 날 (비워 두면 계속)<input class="input" type="date" id="eUntil"></label>
+  </div>
   <label class="f" for="eMemo">메모<textarea class="input" id="eMemo" rows="2" maxlength="300"></textarea></label>
   <div class="actions">
     <button type="button" class="btn danger" id="eDelete">삭제</button>
     <button type="button" class="btn ghost" id="eCancel">취소</button>
     <button type="submit" class="btn">저장</button>
+  </div>
+  <div id="repeatDel" class="repeat-del" hidden>
+    <div style="font-size:13px;color:var(--muted)">반복되는 일정이에요. 어떻게 삭제할까요?</div>
+    <div class="actions">
+      <button type="button" class="btn ghost" id="delCancel">취소</button>
+      <button type="button" class="btn ghost" id="delOne">이 날만 삭제</button>
+      <button type="button" class="btn danger" id="delAll">반복 전체 삭제</button>
+    </div>
   </div>
 </form>
 
@@ -353,9 +367,54 @@ const firebaseConfig = {
   function showBanner(t){ const b=document.getElementById("banner"); b.textContent=t; b.hidden=false; }
   function hideBanner(){ document.getElementById("banner").hidden=true; }
 
+  // ---------- repeat ----------
+  const REPEATS = ["none","daily","weekly","monthlyDate","monthlyNth","yearly","weekdays"];
+  const NTH = ["첫째","둘째","셋째","넷째","다섯째"];
+  function repeatLabel(kind, k){
+    const d = parse(k);
+    switch(kind){
+      case "daily": return "매일";
+      case "weekly": return "매주 "+W[d.getDay()]+"요일";
+      case "monthlyDate": return "매월 "+d.getDate()+"일";
+      case "monthlyNth": return "매월 "+NTH[Math.ceil(d.getDate()/7)-1]+" "+W[d.getDay()]+"요일";
+      case "yearly": return "매년 "+(d.getMonth()+1)+"월 "+d.getDate()+"일";
+      case "weekdays": return "주중 매일 (월-금)";
+      default: return "반복 안 함";
+    }
+  }
+  const isRepeat = e => !!e.repeat && e.repeat!=="none" && REPEATS.indexOf(e.repeat)>0;
+  function matchRule(e, k){
+    const a = parse(e.date), b = parse(k);
+    if(!isRepeat(e)) return k===e.date;
+    switch(e.repeat){
+      case "daily": return true;
+      case "weekdays": return b.getDay()>=1 && b.getDay()<=5;
+      case "weekly": return a.getDay()===b.getDay();
+      case "monthlyDate": return a.getDate()===b.getDate();
+      case "monthlyNth": return a.getDay()===b.getDay() && Math.ceil(a.getDate()/7)===Math.ceil(b.getDate()/7);
+      case "yearly": return a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+    }
+    return false;
+  }
+  const spanOf = e => (validKey(e.end) && e.end>e.date) ? diff(e.date, e.end) : 0;
+  function occStart(e, key){
+    if(!validKey(e.date)) return null;
+    const span = spanOf(e);
+    for(let off=0; off<=span; off++){
+      const st = fmt(addDays(parse(key), -off));
+      if(st<e.date) break;
+      if(isRepeat(e)){
+        if(validKey(e.until) && st>e.until) continue;
+        if(Array.isArray(e.skip) && e.skip.indexOf(st)>=0) continue;
+      }
+      if(matchRule(e, st)) return st;
+    }
+    return null;
+  }
+
   // ---------- derived ----------
   function eventsOn(key){
-    return S.events.filter(e => validKey(e.date) && e.date<=key && ((validKey(e.end) && e.end>=e.date) ? e.end : e.date)>=key)
+    return S.events.filter(e => occStart(e, key)!==null)
       .sort((a,b)=>{
         const ta = a.allDay ? "" : (a.start||""), tb = b.allDay ? "" : (b.start||"");
         return ta<tb?-1:ta>tb?1:String(a.title).localeCompare(String(b.title));
@@ -452,7 +511,8 @@ const firebaseConfig = {
   function eventRow(e){
     const c = e.color||DEFAULT_COLOR[e.who]||COLORS[0];
     let when = e.allDay || !e.start ? "하루 종일" : e.start+(e.finish?" ~ "+e.finish:"");
-    if(validKey(e.end) && e.end>e.date) when = niceDate(e.date)+" ~ "+niceDate(e.end)+" · "+when;
+    if(validKey(e.end) && e.end>e.date && !isRepeat(e)) when = niceDate(e.date)+" ~ "+niceDate(e.end)+" · "+when;
+    if(isRepeat(e)) when = "🔁 "+repeatLabel(e.repeat, e.date)+(validKey(e.until)?" (~"+e.until.slice(2).replace(/-/g,".")+")":"")+" · "+when;
     return '<div class="row" role="button" tabindex="0" data-edit="'+esc(e.id)+'" style="--c:'+esc(c)+'">'+
       '<span class="bar"></span><div class="grow"><div class="t">'+esc(e.title)+'</div><div class="s">'+esc(when)+(e.memo?' · '+esc(e.memo):'')+'</div>'+(e.location?'<a class="loc" href="https://map.kakao.com/?q='+encodeURIComponent(e.location)+'" target="_blank" rel="noopener">📍 '+esc(e.location)+' <span class="map-go">카카오맵에서 보기 ›</span></a>':'')+'</div>'+
       '<span class="chip" style="--c:'+WHO_COLOR[e.who||"AB"]+'">'+esc(whoName(e.who||"AB"))+'</span></div>';
@@ -526,10 +586,36 @@ const firebaseConfig = {
     S.form.who = ev ? (ev.who||"AB") : "AB";
     S.form.color = ev ? (ev.color||DEFAULT_COLOR[S.form.who]) : DEFAULT_COLOR.AB;
     document.getElementById("eDelete").hidden = !ev;
+    document.getElementById("repeatDel").hidden = true;
+    S.editingOcc = ev ? (occStart(ev, S.selected) || ev.date) : null;
+    fillRepeatOptions(ev && isRepeat(ev) ? ev.repeat : "none");
+    document.getElementById("eUntil").value = ev && validKey(ev.until) ? ev.until : "";
     toggleTime(); renderWhoOptions();
     openSheet("editSheet");
     setTimeout(()=>{ if(!ev) document.getElementById("eTitle").focus(); }, 230);
   }
+  function fillRepeatOptions(want){
+    const sel = document.getElementById("eRepeat");
+    const v = want || sel.value || "none";
+    const dv = document.getElementById("eDate").value;
+    const k = validKey(dv) ? dv : S.selected;
+    sel.innerHTML = REPEATS.map(r=>'<option value="'+r+'">'+esc(repeatLabel(r,k))+'</option>').join("");
+    sel.value = v;
+    document.getElementById("untilRow").hidden = sel.value==="none";
+  }
+  document.getElementById("eRepeat").addEventListener("change", ()=>{ document.getElementById("untilRow").hidden = document.getElementById("eRepeat").value==="none"; });
+  document.getElementById("eDate").addEventListener("change", ()=> fillRepeatOptions());
+  function stripId(ev){ const o = Object.assign({}, ev); delete o.id; return o; }
+  document.getElementById("delCancel").onclick = ()=>{ document.getElementById("repeatDel").hidden = true; };
+  document.getElementById("delOne").onclick = async ()=>{
+    const ev = S.events.find(x=>x.id===S.editing); if(!ev) return;
+    const data = stripId(ev); data.skip = (Array.isArray(ev.skip)?ev.skip:[]).concat([S.editingOcc||ev.date]);
+    closeSheets(); await put("events", ev.id, data);
+  };
+  document.getElementById("delAll").onclick = async ()=>{
+    const id = S.editing; if(!id) return; closeSheets(); await del("events", id);
+  };
+
   // 24-hour typing: "2000" -> "20:00", "830" -> "08:30", "8" -> "08:00"
   function normTime(v){
     v = String(v||"").trim(); if(!v) return "";
@@ -584,6 +670,8 @@ const firebaseConfig = {
   document.getElementById("eCancel").onclick = closeSheets;
   document.getElementById("eDelete").onclick = async ()=>{
     if(!S.editing) return;
+    const cur = S.events.find(x=>x.id===S.editing);
+    if(cur && isRepeat(cur)){ document.getElementById("repeatDel").hidden = false; document.getElementById("repeatDel").scrollIntoView({block:"nearest"}); return; }
     const btn = document.getElementById("eDelete");
     if(btn.dataset.confirm!=="1"){ btn.dataset.confirm="1"; btn.textContent="정말 삭제"; setTimeout(()=>{btn.dataset.confirm="";btn.textContent="삭제";},3000); return; }
     btn.dataset.confirm=""; btn.textContent="삭제";
@@ -610,11 +698,20 @@ const firebaseConfig = {
       title, date, end, allDay,
       start: tStart,
       finish: tFinish,
+      repeat: document.getElementById("eRepeat").value || "none",
+      until: "",
+      skip: [],
       who: S.form.who, color: S.form.color,
       memo: document.getElementById("eMemo").value.trim(),
       location: document.getElementById("eLoc").value.trim(),
       updated: Date.now()
     };
+    if(data.repeat!=="none"){
+      const u = document.getElementById("eUntil").value;
+      data.until = validKey(u) && u>=date ? u : "";
+      const old = S.editing ? S.events.find(x=>x.id===S.editing) : null;
+      if(old && Array.isArray(old.skip) && old.repeat===data.repeat && old.date===date) data.skip = old.skip.filter(validKey);
+    }
     const id = S.editing || uid("e");
     S.selected = date;
     closeSheets();
