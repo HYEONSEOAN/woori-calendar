@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>우리 둘 캘린더</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a paper-planner month grid where each day stacks small colored blocks; bottom tabs and sheets like a phone planner. */
+:root{
+  --bg:#F4F6FB;
+  --surface:#FFFFFF;
+  --ink:#1E2433;
+  --muted:#7A8296;
+  --line:#E3E7F0;
+  --accent:#4A7CF7;
+  --who-a:#4A7CF7;
+  --who-b:#F25C7A;
+  --who-ab:#8E6CEF;
+  --sun:#E5484D;
+  --sat:#3E7BE6;
+  --today-bg:#EAF0FF;
+  --font-display:"Jua","Noto Sans KR",system-ui,sans-serif;
+  --font-body:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12151C; --surface:#1B1F29; --ink:#E9ECF3; --muted:#8E96A8; --line:#2A303D;
+    --accent:#7FA2FF; --today-bg:#232C42; --sun:#FF7B7F; --sat:#7FA2FF;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12151C; --surface:#1B1F29; --ink:#E9ECF3; --muted:#8E96A8; --line:#2A303D;
+  --accent:#7FA2FF; --today-bg:#232C42; --sun:#FF7B7F; --sat:#7FA2FF;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#app{max-width:760px;margin:0 auto;padding:0 12px calc(130px + env(safe-area-inset-bottom));}
+.top{display:flex;align-items:center;gap:8px;padding:14px 4px 10px;position:sticky;top:0;background:var(--bg);z-index:5}
+.top h1{font-family:var(--font-display);font-weight:400;font-size:24px;margin:0;min-width:120px;text-align:center}
+.icon-btn{border:0;background:transparent;width:36px;height:36px;border-radius:10px;font-size:22px;line-height:1;color:var(--muted)}
+.icon-btn:hover{background:var(--line)}
+.pill{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:13px}
+.dday{margin-left:auto;font-family:var(--font-display);font-size:16px;color:var(--who-b);white-space:nowrap}
+#banner{background:#FFF4D6;color:#6B4E00;border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:10px}
+:root[data-theme="dark"] #banner{background:#3A3016;color:#F3DFA6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) #banner{background:#3A3016;color:#F3DFA6}}
+
+/* Calendar */
+.weekhead{display:grid;grid-template-columns:repeat(7,1fr);font-size:12px;color:var(--muted);text-align:center;padding:4px 0}
+.weekhead span:first-child{color:var(--sun)} .weekhead span:last-child{color:var(--sat)}
+.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));background:var(--surface);border-radius:16px;overflow:hidden;border:1px solid var(--line)}
+.cell{border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:transparent;min-height:92px;padding:4px 3px;text-align:left;display:flex;flex-direction:column;gap:2px;min-width:0}
+.cell:nth-child(7n){border-right:0}
+.cell.out .num{opacity:.35}
+.cell.out .blk{opacity:.45}
+.cell.sel{background:var(--today-bg)}
+.num{font-size:12px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-variant-numeric:tabular-nums}
+.cell.sun .num{color:var(--sun)} .cell.sat .num{color:var(--sat)}
+.cell.today .num{background:var(--accent);color:#fff}
+.mark{font-size:10px;color:var(--who-b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:2px}
+.blk{display:block;background:var(--c);color:#fff;border-radius:4px;font-size:11px;line-height:1.35;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.more{font-size:10px;color:var(--muted);padding-left:3px}
+
+/* Lists */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+.card h2{font-family:var(--font-display);font-weight:400;font-size:19px;margin:0}
+.row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .grow{flex:1;min-width:0}
+.row .t{font-weight:500;overflow-wrap:anywhere}
+.row .s{font-size:12px;color:var(--muted)}
+.bar{width:5px;align-self:stretch;border-radius:3px;background:var(--c)}
+.chip{font-size:11px;border-radius:999px;padding:2px 8px;color:#fff;background:var(--c);white-space:nowrap}
+.empty{color:var(--muted);font-size:14px;padding:6px 4px}
+.big{font-family:var(--font-display);font-size:40px;color:var(--who-b);line-height:1.1}
+.dtag{font-family:var(--font-display);font-size:17px;color:var(--accent);white-space:nowrap}
+.done .t{text-decoration:line-through;color:var(--muted)}
+.check{width:22px;height:22px;accent-color:var(--who-ab)}
+.del{border:0;background:transparent;color:var(--muted);font-size:18px;width:32px;height:32px;border-radius:8px}
+
+/* Forms */
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.input{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;font-size:15px;width:100%}
+.inline{display:flex;gap:8px;flex-wrap:wrap}
+.inline > *{flex:1;min-width:120px}
+.seg{display:flex;gap:6px}
+.seg button{flex:1;border:1.5px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 4px;font-size:14px}
+.seg button[aria-pressed="true"]{border-color:var(--c);background:var(--c);color:#fff}
+.swatches{display:flex;gap:10px;flex-wrap:wrap}
+.sw{width:30px;height:30px;border-radius:50%;border:3px solid transparent;background:var(--c);padding:0}
+.sw[aria-pressed="true"]{border-color:var(--ink)}
+.sw{box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}
+.color-groups{display:flex;flex-direction:column;gap:6px}
+.sw-label{font-size:11px;color:var(--muted)}
+.btn{border:0;border-radius:12px;padding:12px 16px;font-weight:700;background:var(--accent);color:#fff}
+.btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.btn.danger{background:transparent;color:var(--sun);border:1px solid var(--line)}
+.actions{display:flex;gap:8px}
+.actions .btn:last-child{flex:1}
+.check-label{display:flex;align-items:center;gap:8px;font-size:14px}
+.loc{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:var(--ink);text-decoration:none;overflow-wrap:anywhere;padding:3px 0}
+.map-go{font-size:11px;font-weight:700;color:#3A2E00;background:#FEE500;border-radius:999px;padding:2px 8px;white-space:nowrap}
+
+/* Tabs, FAB, sheets */
+.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom);z-index:20}
+.tabs .inner{display:flex;width:100%;max-width:760px}
+.tabs button{flex:1;border:0;background:transparent;padding:10px 0 12px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px}
+.tabs button .ic{font-size:19px;line-height:1}
+.tabs button[aria-current="page"]{color:var(--accent);font-weight:700}
+.fab{position:fixed;right:max(16px,calc(50% - 364px));bottom:calc(78px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:18px;border:0;background:var(--accent);color:#fff;font-size:30px;box-shadow:0 6px 18px rgba(40,70,160,.3);z-index:21}
+.backdrop{position:fixed;inset:0;background:rgba(10,14,25,.35);z-index:30}
+.sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:760px;max-height:88%;overflow:auto;background:var(--surface);border-radius:22px 22px 0 0;padding:10px 18px calc(22px + env(safe-area-inset-bottom));z-index:31;transform:translateY(105%);transition:transform .22s ease;display:flex;flex-direction:column;gap:14px}
+.sheet.open{transform:none}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:2px auto 0}
+.sheet h3{font-family:var(--font-display);font-weight:400;font-size:22px;margin:0}
+@media (prefers-reduced-motion: reduce){.sheet{transition:none}}
+@media (max-width:420px){
+  .cell{min-height:78px}
+  .blk{font-size:10px;padding:1px 3px}
+  .top h1{font-size:21px;min-width:100px}
+}
+[hidden]{display:none !important}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <button class="icon-btn" id="prev" aria-label="이전 달">‹</button>
+    <h1 id="monthTitle"></h1>
+    <button class="icon-btn" id="next" aria-label="다음 달">›</button>
+    <button class="pill" id="todayBtn">오늘</button>
+    <div class="dday" id="ddayChip"></div>
+  </header>
+  <div id="banner" hidden></div>
+
+  <main>
+    <section id="view-cal" class="view">
+      <div class="weekhead"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <section id="view-todo" class="view" hidden>
+      <div class="card">
+        <h2>같이 볼 할 일</h2>
+        <form id="todoForm" class="inline">
+          <input class="input" id="todoText" placeholder="예: 여행 숙소 예약하기" autocomplete="off" style="flex:3">
+          <select class="input" id="todoWho" style="flex:1"></select>
+          <button class="btn" type="submit" style="flex:0 0 auto">추가</button>
+        </form>
+        <div id="todoList"></div>
+      </div>
+    </section>
+
+    <section id="view-anniv" class="view" hidden>
+      <div class="card" id="sinceCard"></div>
+      <div class="card">
+        <h2>다가오는 날</h2>
+        <div id="upcomingList"></div>
+      </div>
+      <div class="card">
+        <h2>기념일 추가</h2>
+        <form id="annivForm" class="inline">
+          <input class="input" id="annivName" placeholder="예: 애인 생일" autocomplete="off">
+          <input class="input" id="annivDate" type="date">
+          <label class="check-label" style="flex:0 0 auto"><input type="checkbox" id="annivRepeat" checked> 매년 반복</label>
+          <button class="btn" type="submit" style="flex:0 0 auto">추가</button>
+        </form>
+        <div id="annivList"></div>
+      </div>
+    </section>
+
+    <section id="view-set" class="view" hidden>
+      <form class="card" id="setForm">
+        <h2>우리 정보</h2>
+        <div class="inline">
+          <label class="f" for="setA">내 이름
+            <input class="input" id="setA" maxlength="10">
+          </label>
+          <label class="f" for="setB">애인 이름
+            <input class="input" id="setB" maxlength="10">
+          </label>
+        </div>
+        <label class="f" for="setSince">사귀기 시작한 날 (이 날이 1일)
+          <input class="input" id="setSince" type="date">
+        </label>
+        <button class="btn" type="submit">저장</button>
+        <div class="s" id="setMsg" style="font-size:13px;color:var(--muted)"></div>
+      </form>
+      <div class="card">
+        <h2>애인과 같이 쓰기</h2>
+        <div style="font-size:14px;line-height:1.6;color:var(--muted)">아래 링크를 애인에게 보내면 로그인 없이 같이 보고 고칠 수 있어요. 링크를 아는 사람은 누구나 수정할 수 있으니 둘만 갖고 있어 주세요.</div>
+        <button class="btn" type="button" id="copyLink">우리 캘린더 링크 복사</button>
+        <div id="copyMsg" style="font-size:13px;color:var(--muted)"></div>
+      </div>
+    </section>
+  </main>
+
+  <button class="fab" id="fab" aria-label="일정 추가">+</button>
+  <nav class="tabs"><div class="inner">
+    <button data-tab="cal" aria-current="page"><span class="ic">▦</span>캘린더</button>
+    <button data-tab="todo"><span class="ic">☑</span>할 일</button>
+    <button data-tab="anniv"><span class="ic">♥</span>기념일</button>
+    <button data-tab="set"><span class="ic">⚙</span>설정</button>
+  </div></nav>
+</div>
+
+<div class="backdrop" id="backdrop" hidden></div>
+
+<div class="sheet" id="daySheet" role="dialog" aria-modal="true" aria-labelledby="dayTitle">
+  <div class="grab"></div>
+  <h3 id="dayTitle"></h3>
+  <div id="dayMarks"></div>
+  <div id="dayList"></div>
+  <button class="btn" id="dayAdd">이 날에 일정 추가</button>
+</div>
+
+<form class="sheet" id="editSheet" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+  <div class="grab"></div>
+  <h3 id="editTitle">새 일정</h3>
+  <input class="input" id="eTitle" placeholder="무슨 일정인가요?" maxlength="60" autocomplete="off" required>
+  <label class="f" for="eLoc">장소<input class="input" id="eLoc" placeholder="예: 안산 25시 광장" maxlength="80" autocomplete="off"></label>
+  <div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">누구 일정?</div>
+    <div class="seg" id="eWho"></div>
+  </div>
+  <div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">블록 색깔</div>
+    <div class="color-groups" id="eColors"></div>
+  </div>
+  <div class="inline">
+    <label class="f" for="eDate">시작일<input class="input" type="date" id="eDate" required></label>
+    <label class="f" for="eEnd">종료일<input class="input" type="date" id="eEnd"></label>
+  </div>
+  <label class="check-label"><input type="checkbox" id="eAllDay"> 하루 종일</label>
+  <div class="inline" id="timeRow">
+    <label class="f" for="eStart">시작 시간<input class="input" type="time" id="eStart"></label>
+    <label class="f" for="eFinish">끝나는 시간<input class="input" type="time" id="eFinish"></label>
+  </div>
+  <label class="f" for="eMemo">메모<textarea class="input" id="eMemo" rows="2" maxlength="300"></textarea></label>
+  <div class="actions">
+    <button type="button" class="btn danger" id="eDelete">삭제</button>
+    <button type="button" class="btn ghost" id="eCancel">취소</button>
+    <button type="submit" class="btn">저장</button>
+  </div>
+</form>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ▼ Firebase 콘솔에서 복사한 설정값을 여기에 넣어요
+const firebaseConfig = {
+  apiKey: "AIzaSyAng3FTp3OueF-NOlJgTC7XUx2XsYINoLs",
+  authDomain: "woori-calendar-1bba5.firebaseapp.com",
+  projectId: "woori-calendar-1bba5",
+  storageBucket: "woori-calendar-1bba5.firebasestorage.app",
+  messagingSenderId: "734310781077",
+  appId: "1:734310781077:web:aab4d1201954b083c00b9c"
+};
+
+(function(){
+  "use strict";
+  const VIVID = ["#4A7CF7","#F25C7A","#8E6CEF","#F59E0B","#14B8A6","#64748B"];
+  const PASTEL = ["#F9B8CF","#FFD6E0","#FFCBA8","#FFE79A","#BDEBD2","#B9D7FF","#D6C8FF","#E6DCCD"];
+  const COLORS = VIVID.concat(PASTEL);
+  const PASTEL_NAMES = {"#F9B8CF":"핑크","#FFD6E0":"연분홍","#FFCBA8":"피치","#FFE79A":"레몬","#BDEBD2":"민트","#B9D7FF":"하늘","#D6C8FF":"라벤더","#E6DCCD":"베이지"};
+  const WHO_COLOR = {A:"#4A7CF7", B:"#F25C7A", AB:"#8E6CEF"};
+  const DEFAULT_COLOR = {A:"#4A7CF7", B:"#F25C7A", AB:"#F9B8CF"};
+  function textOn(hex){
+    const m = /^#([0-9a-f]{6})$/i.exec(hex||""); if(!m) return "#fff";
+    const n = parseInt(m[1],16); const r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+    return (0.299*r+0.587*g+0.114*b) > 170 ? "#3B2F3A" : "#fff";
+  }
+  const W = "일월화수목금토";
+
+  const S = {
+    settings:{nameA:"나", nameB:"애인", since:""},
+    events:[], todos:[], annivs:[],
+    cur:null, selected:null, tab:"cal", editing:null,
+    form:{who:"AB", color:"#F9B8CF"}
+  };
+  let db = null;
+  function makeKey(){
+    const a = new Uint8Array(18); crypto.getRandomValues(a);
+    return "c" + Array.from(a, x=>x.toString(36).padStart(2,"0")).join("");
+  }
+  let KEY = (location.hash||"").replace(/^#/,"");
+  if(!/^c[a-z0-9]{24,}$/.test(KEY)){
+    let saved = ""; try{ saved = localStorage.getItem("ourCalKey")||""; }catch(e){}
+    KEY = /^c[a-z0-9]{24,}$/.test(saved) ? saved : makeKey();
+    try{ history.replaceState(null, "", "#"+KEY); }catch(e){ location.hash = KEY; }
+  }
+  try{ localStorage.setItem("ourCalKey", KEY); }catch(e){}
+
+  // ---------- date helpers ----------
+  const pad = n => String(n).padStart(2,"0");
+  const fmt = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+  const parse = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y,m-1,d); };
+  const addDays = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+  const diff = (a,b) => Math.round((parse(b)-parse(a))/86400000);
+  const todayKey = () => fmt(new Date());
+  const niceDate = k => { const d = parse(k); return (d.getMonth()+1)+"월 "+d.getDate()+"일 ("+W[d.getDay()]+")"; };
+  const dTag = n => n===0 ? "D-Day" : (n>0 ? "D-"+n : "D+"+(-n));
+  const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+  const validKey = s => typeof s==="string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+  const whoName = w => w==="A" ? (S.settings.nameA||"나") : w==="B" ? (S.settings.nameB||"애인") : "함께";
+
+  // ---------- data access ----------
+  async function put(col, id, data){
+    if(db){
+      try{ await setDoc(doc(db, "calendars", KEY, col, id), data); }
+      catch(e){ failWrite(e); }
+    } else {
+      const arr = S[col]; const i = arr.findIndex(x=>x.id===id);
+      const row = Object.assign({id}, data);
+      if(i>=0) arr[i]=row; else arr.push(row);
+      render();
+    }
+  }
+  async function del(col, id){
+    if(db){
+      try{ await deleteDoc(doc(db, "calendars", KEY, col, id)); }
+      catch(e){ failWrite(e); }
+    } else {
+      S[col] = S[col].filter(x=>x.id!==id); render();
+    }
+  }
+  async function putSettings(data){
+    if(db){
+      try{ await setDoc(doc(db, "calendars", KEY, "settings", "main"), data); return true; }
+      catch(e){ failWrite(e); return false; }
+    }
+    S.settings = data; render(); return true;
+  }
+  function failWrite(e){
+    const code = e && e.code;
+    if(code==="permission-denied") showBanner("저장하지 못했어요. 링크가 잘렸는지 확인해 주세요.");
+    else if(code==="resource-exhausted") showBanner("오늘 무료 사용량을 다 썼어요. 내일 다시 시도해 주세요.");
+    else showBanner("저장하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  }
+  function showBanner(t){ const b=document.getElementById("banner"); b.textContent=t; b.hidden=false; }
+  function hideBanner(){ document.getElementById("banner").hidden=true; }
+
+  // ---------- derived ----------
+  function eventsOn(key){
+    return S.events.filter(e => validKey(e.date) && e.date<=key && ((validKey(e.end) && e.end>=e.date) ? e.end : e.date)>=key)
+      .sort((a,b)=>{
+        const ta = a.allDay ? "" : (a.start||""), tb = b.allDay ? "" : (b.start||"");
+        return ta<tb?-1:ta>tb?1:String(a.title).localeCompare(String(b.title));
+      });
+  }
+  function marksOn(key){
+    const out = [];
+    const since = S.settings.since;
+    if(validKey(since)){
+      const n = diff(since,key)+1;
+      if(n===1) out.push("사귄 날");
+      else if(n>0 && n%100===0) out.push(n+"일");
+      if(key.slice(5)===since.slice(5) && key>since) out.push((parse(key).getFullYear()-parse(since).getFullYear())+"주년");
+    }
+    S.annivs.forEach(a=>{
+      if(!validKey(a.date)) return;
+      if(a.repeat ? (key.slice(5)===a.date.slice(5) && key>=a.date) : key===a.date) out.push(a.name);
+    });
+    return out;
+  }
+  function nextOccur(a){
+    const t = todayKey();
+    if(!a.repeat) return a.date;
+    const d = parse(a.date); const y = parse(t).getFullYear();
+    let k = fmt(new Date(y, d.getMonth(), d.getDate()));
+    if(k<t) k = fmt(new Date(y+1, d.getMonth(), d.getDate()));
+    return k<a.date ? a.date : k;
+  }
+  function upcoming(){
+    const t = todayKey(); const list = [];
+    const since = S.settings.since;
+    if(validKey(since)){
+      const s = parse(since);
+      let found = 0;
+      for(let n=100;n<=20000 && found<3;n+=100){
+        const k = fmt(addDays(s,n-1)); if(k>=t){ list.push({name:n+"일", date:k}); found++; }
+      }
+      found=0;
+      for(let y=1;y<=60 && found<2;y++){
+        const k = fmt(new Date(s.getFullYear()+y, s.getMonth(), s.getDate()));
+        if(k>=t){ list.push({name:y+"주년", date:k}); found++; }
+      }
+    }
+    S.annivs.forEach(a=>{ if(validKey(a.date)){ const k=nextOccur(a); if(k>=t) list.push({name:a.name, date:k}); } });
+    return list.sort((a,b)=>a.date<b.date?-1:1).slice(0,8);
+  }
+
+  // ---------- render ----------
+  function render(){
+    renderHeader();
+    if(S.tab==="cal") renderCal();
+    if(S.tab==="todo") renderTodos();
+    if(S.tab==="anniv") renderAnniv();
+    if(document.getElementById("daySheet").classList.contains("open")) renderDay();
+    renderWhoOptions();
+  }
+  function renderHeader(){
+    const y = S.cur.getFullYear(), m = S.cur.getMonth();
+    document.getElementById("monthTitle").textContent = y+"년 "+(m+1)+"월";
+    const since = S.settings.since;
+    const chip = document.getElementById("ddayChip");
+    chip.textContent = validKey(since) && since<=todayKey() ? "♥ "+(diff(since,todayKey())+1)+"일째" : "";
+  }
+  function renderCal(){
+    const y = S.cur.getFullYear(), m = S.cur.getMonth();
+    const first = new Date(y,m,1);
+    const dim = new Date(y,m+1,0).getDate();
+    const weeks = Math.ceil((first.getDay()+dim)/7);
+    const start = addDays(first, -first.getDay());
+    const t = todayKey();
+    let html = "";
+    for(let i=0;i<weeks*7;i++){
+      const d = addDays(start,i); const k = fmt(d);
+      const evs = eventsOn(k); const marks = marksOn(k);
+      const cls = ["cell"];
+      if(d.getMonth()!==m) cls.push("out");
+      if(k===t) cls.push("today");
+      if(k===S.selected) cls.push("sel");
+      if(d.getDay()===0) cls.push("sun");
+      if(d.getDay()===6) cls.push("sat");
+      const label = niceDate(k)+", 일정 "+evs.length+"개";
+      let inner = '<span class="num">'+d.getDate()+'</span>';
+      if(marks.length) inner += '<span class="mark">♥ '+esc(marks[0])+'</span>';
+      const max = marks.length ? 2 : 3;
+      evs.slice(0,max).forEach(e=>{
+        const bc = e.color||DEFAULT_COLOR[e.who]||COLORS[0];
+        inner += '<span class="blk" style="--c:'+esc(bc)+';color:'+textOn(bc)+'">'+esc(e.title)+'</span>';
+      });
+      if(evs.length>max) inner += '<span class="more">+'+(evs.length-max)+'</span>';
+      html += '<button type="button" class="'+cls.join(" ")+'" data-key="'+k+'" aria-label="'+esc(label)+'">'+inner+'</button>';
+    }
+    document.getElementById("grid").innerHTML = html;
+  }
+  function eventRow(e){
+    const c = e.color||DEFAULT_COLOR[e.who]||COLORS[0];
+    let when = e.allDay || !e.start ? "하루 종일" : e.start+(e.finish?" ~ "+e.finish:"");
+    if(validKey(e.end) && e.end>e.date) when = niceDate(e.date)+" ~ "+niceDate(e.end)+" · "+when;
+    return '<div class="row" role="button" tabindex="0" data-edit="'+esc(e.id)+'" style="--c:'+esc(c)+'">'+
+      '<span class="bar"></span><div class="grow"><div class="t">'+esc(e.title)+'</div><div class="s">'+esc(when)+(e.memo?' · '+esc(e.memo):'')+'</div>'+(e.location?'<a class="loc" href="https://map.kakao.com/?q='+encodeURIComponent(e.location)+'" target="_blank" rel="noopener">📍 '+esc(e.location)+' <span class="map-go">카카오맵에서 보기 ›</span></a>':'')+'</div>'+
+      '<span class="chip" style="--c:'+WHO_COLOR[e.who||"AB"]+'">'+esc(whoName(e.who||"AB"))+'</span></div>';
+  }
+  function renderDay(){
+    const k = S.selected;
+    document.getElementById("dayTitle").textContent = niceDate(k);
+    const marks = marksOn(k);
+    document.getElementById("dayMarks").innerHTML = marks.length ? '<div class="mark" style="font-size:14px">♥ '+marks.map(esc).join(" · ")+'</div>' : "";
+    const evs = eventsOn(k);
+    document.getElementById("dayList").innerHTML = evs.length ? evs.map(eventRow).join("") : '<div class="empty">아직 일정이 없어요.</div>';
+  }
+  function renderTodos(){
+    const sorted = S.todos.slice().sort((a,b)=> (a.done-b.done) || ((a.created||0)-(b.created||0)));
+    document.getElementById("todoList").innerHTML = sorted.length ? sorted.map(t=>
+      '<div class="row'+(t.done?' done':'')+'"><input type="checkbox" class="check" data-todo="'+esc(t.id)+'" '+(t.done?'checked':'')+' aria-label="완료 표시">'+
+      '<div class="grow"><div class="t">'+esc(t.text)+'</div></div>'+
+      '<span class="chip" style="--c:'+WHO_COLOR[t.who||"AB"]+'">'+esc(whoName(t.who||"AB"))+'</span>'+
+      '<button class="del" data-deltodo="'+esc(t.id)+'" aria-label="할 일 삭제">×</button></div>'
+    ).join("") : '<div class="empty">같이 챙길 일을 적어 보세요.</div>';
+  }
+  function renderAnniv(){
+    const since = S.settings.since; const t = todayKey();
+    document.getElementById("sinceCard").innerHTML = validKey(since)
+      ? '<h2>'+esc(S.settings.nameA||"나")+' ♥ '+esc(S.settings.nameB||"애인")+'</h2><div class="big">'+(since<=t ? (diff(since,t)+1)+'일째' : '시작까지 '+dTag(diff(t,since)))+'</div><div class="s" style="color:var(--muted);font-size:13px">'+niceDate(since)+' '+parse(since).getFullYear()+'년부터</div>'
+      : '<h2>사귄 날을 알려 주세요</h2><div class="empty">설정 탭에서 사귀기 시작한 날을 넣으면 며칠째인지, 100일과 주년이 언제인지 자동으로 계산해 드려요.</div>';
+    const up = upcoming();
+    document.getElementById("upcomingList").innerHTML = up.length ? up.map(u=>
+      '<div class="row"><div class="grow"><div class="t">'+esc(u.name)+'</div><div class="s">'+parse(u.date).getFullYear()+'년 '+niceDate(u.date)+'</div></div><span class="dtag">'+dTag(diff(t,u.date))+'</span></div>'
+    ).join("") : '<div class="empty">다가오는 기념일이 없어요.</div>';
+    document.getElementById("annivList").innerHTML = S.annivs.slice().sort((a,b)=>a.date<b.date?-1:1).map(a=>
+      '<div class="row"><div class="grow"><div class="t">'+esc(a.name)+'</div><div class="s">'+esc(a.date)+(a.repeat?' · 매년':'')+'</div></div><button class="del" data-delanniv="'+esc(a.id)+'" aria-label="기념일 삭제">×</button></div>'
+    ).join("");
+  }
+  function renderWhoOptions(){
+    const sel = document.getElementById("todoWho"); const v = sel.value || "AB";
+    sel.innerHTML = ["AB","A","B"].map(w=>'<option value="'+w+'">'+esc(whoName(w))+'</option>').join("");
+    sel.value = v;
+    const seg = document.getElementById("eWho");
+    seg.innerHTML = ["A","B","AB"].map(w=>'<button type="button" data-who="'+w+'" style="--c:'+WHO_COLOR[w]+'" aria-pressed="'+(S.form.who===w)+'">'+esc(whoName(w))+'</button>').join("");
+    const sw = c => '<button type="button" class="sw" data-color="'+c+'" style="--c:'+c+'" aria-pressed="'+(S.form.color===c)+'" aria-label="'+(PASTEL_NAMES[c]?"파스텔 "+PASTEL_NAMES[c]:"선명한 색 "+c)+'"></button>';
+    document.getElementById("eColors").innerHTML =
+      '<div class="sw-label">파스텔</div><div class="swatches">'+PASTEL.map(sw).join("")+'</div>'+
+      '<div class="sw-label">선명한 색</div><div class="swatches">'+VIVID.map(sw).join("")+'</div>';
+  }
+  function fillSettings(){
+    document.getElementById("setA").value = S.settings.nameA||"";
+    document.getElementById("setB").value = S.settings.nameB||"";
+    document.getElementById("setSince").value = S.settings.since||"";
+  }
+
+  // ---------- sheets ----------
+  const backdrop = document.getElementById("backdrop");
+  function openSheet(id){ closeSheets(); backdrop.hidden=false; document.getElementById(id).classList.add("open"); }
+  function closeSheets(){ backdrop.hidden=true; document.querySelectorAll(".sheet.open").forEach(s=>s.classList.remove("open")); }
+  backdrop.addEventListener("click", closeSheets);
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeSheets(); });
+
+  function openDay(k){ S.selected=k; renderCal(); renderDay(); openSheet("daySheet"); }
+  function openEdit(ev, dateKey){
+    S.editing = ev ? ev.id : null;
+    document.getElementById("editTitle").textContent = ev ? "일정 고치기" : "새 일정";
+    document.getElementById("eTitle").value = ev ? ev.title : "";
+    document.getElementById("eLoc").value = ev ? (ev.location||"") : "";
+    document.getElementById("eDate").value = ev ? ev.date : (dateKey||S.selected);
+    document.getElementById("eEnd").value = ev && ev.end && ev.end!==ev.date ? ev.end : "";
+    document.getElementById("eAllDay").checked = ev ? !!ev.allDay : false;
+    document.getElementById("eStart").value = ev ? (ev.start||"") : "";
+    document.getElementById("eFinish").value = ev ? (ev.finish||"") : "";
+    document.getElementById("eMemo").value = ev ? (ev.memo||"") : "";
+    S.form.who = ev ? (ev.who||"AB") : "AB";
+    S.form.color = ev ? (ev.color||DEFAULT_COLOR[S.form.who]) : DEFAULT_COLOR.AB;
+    document.getElementById("eDelete").hidden = !ev;
+    toggleTime(); renderWhoOptions();
+    openSheet("editSheet");
+    setTimeout(()=>{ if(!ev) document.getElementById("eTitle").focus(); }, 230);
+  }
+  function toggleTime(){ document.getElementById("timeRow").hidden = document.getElementById("eAllDay").checked; }
+
+  // ---------- events ----------
+  document.getElementById("prev").onclick = ()=>{ S.cur = new Date(S.cur.getFullYear(), S.cur.getMonth()-1, 1); render(); };
+  document.getElementById("next").onclick = ()=>{ S.cur = new Date(S.cur.getFullYear(), S.cur.getMonth()+1, 1); render(); };
+  document.getElementById("todayBtn").onclick = ()=>{ const n=new Date(); S.cur=new Date(n.getFullYear(),n.getMonth(),1); S.selected=todayKey(); setTab("cal"); };
+  document.getElementById("grid").addEventListener("click", e=>{ const c=e.target.closest(".cell"); if(c) openDay(c.dataset.key); });
+  document.getElementById("dayAdd").onclick = ()=> openEdit(null, S.selected);
+  function onEditClick(e){ if(e.target.closest("a")) return; const r=e.target.closest("[data-edit]"); if(!r) return; const ev=S.events.find(x=>x.id===r.dataset.edit); if(ev) openEdit(ev); }
+  document.getElementById("dayList").addEventListener("click", onEditClick);
+  document.getElementById("dayList").addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); onEditClick(e); } });
+
+  document.getElementById("eWho").addEventListener("click", e=>{
+    const b=e.target.closest("[data-who]"); if(!b) return;
+    const prevDefault = DEFAULT_COLOR[S.form.who];
+    if(S.form.color===prevDefault) S.form.color = DEFAULT_COLOR[b.dataset.who];
+    S.form.who=b.dataset.who; renderWhoOptions();
+  });
+  document.getElementById("eColors").addEventListener("click", e=>{ const b=e.target.closest("[data-color]"); if(!b) return; S.form.color=b.dataset.color; renderWhoOptions(); });
+  document.getElementById("eAllDay").addEventListener("change", toggleTime);
+  document.getElementById("eCancel").onclick = closeSheets;
+  document.getElementById("eDelete").onclick = async ()=>{
+    if(!S.editing) return;
+    const btn = document.getElementById("eDelete");
+    if(btn.dataset.confirm!=="1"){ btn.dataset.confirm="1"; btn.textContent="정말 삭제"; setTimeout(()=>{btn.dataset.confirm="";btn.textContent="삭제";},3000); return; }
+    btn.dataset.confirm=""; btn.textContent="삭제";
+    const id=S.editing; closeSheets(); await del("events", id);
+  };
+  document.getElementById("editSheet").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const title = document.getElementById("eTitle").value.trim();
+    const date = document.getElementById("eDate").value;
+    if(!title || !validKey(date)) return;
+    let end = document.getElementById("eEnd").value;
+    if(!validKey(end) || end<date) end = date;
+    const allDay = document.getElementById("eAllDay").checked;
+    const data = {
+      title, date, end, allDay,
+      start: allDay ? "" : document.getElementById("eStart").value,
+      finish: allDay ? "" : document.getElementById("eFinish").value,
+      who: S.form.who, color: S.form.color,
+      memo: document.getElementById("eMemo").value.trim(),
+      location: document.getElementById("eLoc").value.trim(),
+      updated: Date.now()
+    };
+    const id = S.editing || uid("e");
+    S.selected = date;
+    closeSheets();
+    await put("events", id, data);
+  });
+
+  document.getElementById("todoForm").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const inp=document.getElementById("todoText"); const text=inp.value.trim(); if(!text) return;
+    inp.value="";
+    await put("todos", uid("t"), {text, who:document.getElementById("todoWho").value, done:false, created:Date.now()});
+  });
+  document.getElementById("todoList").addEventListener("change", async e=>{
+    const id=e.target.dataset.todo; if(!id) return;
+    const t=S.todos.find(x=>x.id===id); if(!t) return;
+    await put("todos", id, {text:t.text, who:t.who, created:t.created||Date.now(), done:e.target.checked});
+  });
+  document.getElementById("todoList").addEventListener("click", async e=>{
+    const b=e.target.closest("[data-deltodo]"); if(b) await del("todos", b.dataset.deltodo);
+  });
+
+  document.getElementById("annivForm").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const name=document.getElementById("annivName").value.trim(); const date=document.getElementById("annivDate").value;
+    if(!name || !validKey(date)) return;
+    document.getElementById("annivName").value="";
+    await put("annivs", uid("a"), {name, date, repeat:document.getElementById("annivRepeat").checked});
+  });
+  document.getElementById("annivList").addEventListener("click", async e=>{
+    const b=e.target.closest("[data-delanniv]"); if(b) await del("annivs", b.dataset.delanniv);
+  });
+
+  document.getElementById("setForm").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const data = {
+      nameA: document.getElementById("setA").value.trim() || "나",
+      nameB: document.getElementById("setB").value.trim() || "애인",
+      since: document.getElementById("setSince").value || ""
+    };
+    const ok = await putSettings(data);
+    document.getElementById("setMsg").textContent = ok ? "저장했어요." : "";
+  });
+
+  function setTab(tab){
+    S.tab = tab;
+    ["cal","todo","anniv","set"].forEach(t=>{ document.getElementById("view-"+t).hidden = t!==tab; });
+    document.querySelectorAll(".tabs button").forEach(b=>{ if(b.dataset.tab===tab) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); });
+    document.getElementById("fab").hidden = tab!=="cal";
+    if(tab==="set"){ fillSettings(); document.getElementById("setMsg").textContent=""; }
+    render();
+  }
+  document.querySelector(".tabs").addEventListener("click", e=>{ const b=e.target.closest("[data-tab]"); if(b) setTab(b.dataset.tab); });
+  document.getElementById("copyLink").onclick = async ()=>{
+    const url = location.href.split("#")[0] + "#" + KEY;
+    try{ await navigator.clipboard.writeText(url); document.getElementById("copyMsg").textContent = "복사했어요. 카톡으로 보내 주세요."; }
+    catch(e){ document.getElementById("copyMsg").textContent = url; }
+  };
+  document.getElementById("fab").onclick = ()=> openEdit(null, S.selected);
+
+  // ---------- boot ----------
+  const now = new Date();
+  S.cur = new Date(now.getFullYear(), now.getMonth(), 1);
+  S.selected = todayKey();
+  render();
+
+  (function(){
+    if(!firebaseConfig.apiKey){ showBanner("아직 Firebase 설정값이 없어요. 여기서 입력한 내용은 저장되지 않아요."); return; }
+    try{ db = getFirestore(initializeApp(firebaseConfig)); }
+    catch(e){ showBanner("Firebase에 연결하지 못했어요. 설정값을 확인해 주세요."); return; }
+    let pending = 4; const settled = new Set();
+    const timer = setTimeout(()=> showBanner("일정을 아직 불러오지 못했어요. 인터넷 연결을 확인해 주세요."), 10000);
+    function confirmLoad(name, meta){
+      if(meta && meta.fromCache) return;
+      if(settled.has(name)) return; settled.add(name);
+      if(--pending===0){ clearTimeout(timer); const b=document.getElementById("banner"); if(b.textContent.indexOf("불러오지")>=0) hideBanner(); }
+    }
+    function onErr(){ clearTimeout(timer); showBanner("일정을 불러오지 못했어요. 링크가 잘리지 않았는지 확인해 주세요."); }
+    ["events","todos","annivs"].forEach(col=>{
+      onSnapshot(collection(db, "calendars", KEY, col), snap=>{
+        S[col] = snap.docs.map(d=>Object.assign({id:d.id}, d.data()));
+        render(); confirmLoad(col, snap.metadata);
+      }, onErr);
+    });
+    onSnapshot(doc(db, "calendars", KEY, "settings", "main"), snap=>{
+      if(snap.exists()){
+        const d = snap.data();
+        S.settings = {nameA: d.nameA||"나", nameB: d.nameB||"애인", since: validKey(d.since)?d.since:""};
+        if(S.tab==="set" && !document.getElementById("setForm").contains(document.activeElement)) fillSettings();
+      }
+      render(); confirmLoad("settings", snap.metadata);
+    }, onErr);
+  })();
+})();
+</script>
+</body>
+</html>
