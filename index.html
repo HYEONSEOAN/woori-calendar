@@ -516,8 +516,7 @@ const firebaseConfig = {
       if(d.getDay()===0) cls.push("sun");
       if(d.getDay()===6) cls.push("sat");
       const label = niceDate(k)+", 일정 "+evs.length+"개";
-      const dcN = dayCount(k);
-      let inner = '<span class="ch"><span class="num">'+d.getDate()+'</span>'+(dcN?'<span class="dc">'+dcN+'일</span>':'')+'</span>';
+      let inner = '<span class="num">'+d.getDate()+'</span>';
       if(marks.length) inner += '<span class="mark">♥ '+esc(marks[0])+'</span>';
       const max = marks.length ? 2 : 3;
       evs.slice(0,max).forEach(e=>{
