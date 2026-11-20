@@ -79,6 +79,13 @@ button{cursor:pointer}
 .cell.drop{background:var(--today-bg);box-shadow:inset 0 0 0 2px var(--accent)}
 body.dragging,body.dragging *{cursor:grabbing !important}
 .hint{font-size:12px;color:var(--muted);padding:8px 4px 0}
+.copy-btn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--muted);white-space:nowrap}
+.copy-btn:hover{background:var(--line)}
+.pastebar{display:flex;align-items:center;gap:10px;background:var(--today-bg);border:1.5px solid var(--accent);border-radius:12px;padding:8px 8px 8px 12px;margin-bottom:8px;font-size:13px}
+.pastebar .pt{flex:1;min-width:0;overflow-wrap:anywhere}
+.pastebar b{font-weight:700}
+.pastebar button{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:6px 12px;font-weight:700;white-space:nowrap}
+.grid.pasting .cell{cursor:copy}
 .toast{position:fixed;left:max(16px,calc(50% - 364px));right:max(88px,calc(50% - 292px));bottom:calc(84px + env(safe-area-inset-bottom));background:var(--ink);color:var(--surface);border-radius:12px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:12px;font-size:14px;z-index:40;box-shadow:0 6px 18px rgba(0,0,0,.25)}
 .toast span{flex:1}
 .toast button{white-space:nowrap;border:0;background:transparent;color:var(--accent);font-weight:700;padding:4px 6px}
@@ -159,9 +166,13 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 
   <main>
     <section id="view-cal" class="view">
+      <div class="pastebar" id="pasteBar" hidden>
+        <div class="pt" id="pasteText"></div>
+        <button type="button" id="pasteDone">끝내기</button>
+      </div>
       <div class="weekhead"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
       <div class="grid" id="grid"></div>
-      <div class="hint">일정 블록을 길게 누른 채 다른 날로 끌어 놓으면 옮겨져요.</div>
+      <div class="hint">일정 블록을 길게 누른 채 다른 날로 끌어 놓으면 옮겨져요. 날짜를 눌러 나오는 목록의 "복사"로 다른 날에 붙여넣을 수도 있어요.</div>
     </section>
 
     <section id="view-todo" class="view" hidden>
@@ -535,6 +546,7 @@ const firebaseConfig = {
     if(isRepeat(e)) when = "🔁 "+repeatLabel(e.repeat, e.date)+(validKey(e.until)?" (~"+e.until.slice(2).replace(/-/g,".")+")":"")+" · "+when;
     return '<div class="row" role="button" tabindex="0" data-edit="'+esc(e.id)+'" style="--c:'+esc(c)+'">'+
       '<span class="bar"></span><div class="grow"><div class="t">'+esc(e.title)+'</div><div class="s">'+esc(when)+(e.memo?' · '+esc(e.memo):'')+'</div>'+(e.location?'<a class="loc" href="https://map.kakao.com/?q='+encodeURIComponent(e.location)+'" target="_blank" rel="noopener">📍 '+esc(e.location)+' <span class="map-go">카카오맵에서 보기 ›</span></a>':'')+'</div>'+
+      '<button type="button" class="copy-btn" data-copy="'+esc(e.id)+'" aria-label="'+esc(e.title)+' 복사">복사</button>'+
       '<span class="chip" style="--c:'+WHO_COLOR[e.who||"AB"]+'">'+esc(whoName(e.who||"AB"))+'</span></div>';
   }
   function renderDay(){
@@ -678,7 +690,9 @@ const firebaseConfig = {
   let suppressClick = false;
   document.getElementById("grid").addEventListener("click", e=>{
     if(suppressClick){ suppressClick=false; return; }
-    const c=e.target.closest(".cell"); if(c) openDay(c.dataset.key);
+    const c=e.target.closest(".cell"); if(!c) return;
+    if(S.clip){ pasteTo(c.dataset.key); return; }
+    openDay(c.dataset.key);
   });
 
   // ---------- drag to move ----------
@@ -775,9 +789,41 @@ const firebaseConfig = {
     }
   }
   document.getElementById("dayAdd").onclick = ()=> openEdit(null, S.selected);
-  function onEditClick(e){ if(e.target.closest("a")) return; const r=e.target.closest("[data-edit]"); if(!r) return; const ev=S.events.find(x=>x.id===r.dataset.edit); if(ev) openEdit(ev); }
+  function onEditClick(e){
+    const cb = e.target.closest("[data-copy]");
+    if(cb){ copyEvent(cb.dataset.copy); return; }
+    if(e.target.closest("a")) return;
+    const r=e.target.closest("[data-edit]"); if(!r) return; const ev=S.events.find(x=>x.id===r.dataset.edit); if(ev) openEdit(ev); }
   document.getElementById("dayList").addEventListener("click", onEditClick);
-  document.getElementById("dayList").addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); onEditClick(e); } });
+  document.getElementById("dayList").addEventListener("keydown", e=>{
+    if(e.target.closest("button,a")) return;
+    if(e.key==="Enter"||e.key===" "){ e.preventDefault(); onEditClick(e); }
+  });
+
+  // ---------- copy & paste ----------
+  function copyEvent(id){
+    const ev = S.events.find(x=>x.id===id); if(!ev) return;
+    const data = stripId(ev);
+    S.clip = {data:Object.assign(data, {repeat:"none", until:"", skip:[]}), span:spanOf(ev)};
+    closeSheets(); setTab("cal"); renderPasteBar();
+  }
+  function renderPasteBar(){
+    const bar = document.getElementById("pasteBar");
+    bar.hidden = !S.clip;
+    document.getElementById("grid").classList.toggle("pasting", !!S.clip);
+    if(S.clip) document.getElementById("pasteText").innerHTML = '<b>'+esc(S.clip.data.title)+'</b> 복사됨 · 붙여넣을 날짜를 누르세요';
+  }
+  function endPaste(){ S.clip = null; renderPasteBar(); }
+  async function pasteTo(key){
+    const c = S.clip; if(!c) return;
+    const data = Object.assign({}, c.data, {date:key, end:fmt(addDays(parse(key), c.span)), updated:Date.now()});
+    const id = uid("e");
+    S.selected = key;
+    await put("events", id, data);
+    toast(niceDate(key)+"에 붙여넣었어요", async ()=>{ await del("events", id); });
+  }
+  document.getElementById("pasteDone").onclick = endPaste;
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape" && S.clip) endPaste(); });
 
   document.getElementById("eWho").addEventListener("click", e=>{
     const b=e.target.closest("[data-who]"); if(!b) return;
