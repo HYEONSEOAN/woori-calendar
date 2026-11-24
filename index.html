@@ -62,7 +62,7 @@ button{cursor:pointer}
 .cell{border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:transparent;min-height:92px;padding:4px 3px;text-align:left;display:flex;flex-direction:column;gap:2px;min-width:0}
 .cell:nth-child(7n){border-right:0}
 .cell.out .num{opacity:.35}
-.cell.out .blk{opacity:.45}
+.cell.out .blk{background:color-mix(in srgb,var(--c) 45%,transparent)}
 .cell.sel{background:var(--today-bg)}
 .num{font-size:12px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-variant-numeric:tabular-nums}
 .cell.sun .num{color:var(--sun)} .cell.sat .num{color:var(--sat)}
@@ -70,6 +70,14 @@ button{cursor:pointer}
 .mark{font-size:10px;color:var(--who-b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:2px}
 .blk{display:block;background:var(--c);color:#fff;border-radius:4px;font-size:11px;line-height:1.35;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .more{font-size:10px;color:var(--muted);padding-left:3px}
+.blk.sp{visibility:hidden;cursor:default}
+.blk.cl{border-top-left-radius:0;border-bottom-left-radius:0;margin-left:-3px}
+.blk.cr{border-top-right-radius:0;border-bottom-right-radius:0;margin-right:-4px}
+.cell:nth-child(7n) .blk.cr{margin-right:-3px}
+.blk.wide{overflow:visible}
+.bt{display:block;position:relative;z-index:3;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt.w{width:calc(var(--n) * 100% + var(--n) * 11px - 15px)}
+.cell.out .bt{opacity:.9}
 .ch{display:flex;align-items:center;justify-content:space-between;gap:2px;min-width:0}
 .dc{font-size:9px;color:var(--who-b);white-space:nowrap;overflow:hidden;letter-spacing:-.3px;font-variant-numeric:tabular-nums;padding-right:1px}
 .grid{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -146,6 +154,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 .sheet h3{font-family:var(--font-display);font-weight:400;font-size:22px;margin:0}
 @media (prefers-reduced-motion: reduce){.sheet{transition:none}}
 @media (max-width:420px){
+  .bt.w{width:calc(var(--n) * 100% + var(--n) * 9px - 13px)}
   .cell{min-height:78px}
   .blk{font-size:10px;padding:1px 3px}
   .top h1{font-size:21px;min-width:100px}
@@ -509,6 +518,40 @@ const firebaseConfig = {
     const chip = document.getElementById("ddayChip");
     chip.textContent = validKey(since) && since<=todayKey() ? "♥ "+(diff(since,todayKey())+1)+"일째" : "";
   }
+  const LANES = 3;
+  function weekSegs(keys){
+    const segs = [], seen = new Set();
+    S.events.forEach(e=>{
+      if(!validKey(e.date)) return;
+      const span = spanOf(e);
+      for(let c=0;c<7;c++){
+        const st = occStart(e, keys[c]); if(st===null) continue;
+        const sid = e.id+"@"+st; if(seen.has(sid)) continue; seen.add(sid);
+        const en = fmt(addDays(parse(st), span));
+        segs.push({e, st, en, span,
+          c0: st<keys[0] ? 0 : diff(keys[0], st),
+          c1: en>keys[6] ? 6 : diff(keys[0], en),
+          contL: st<keys[0], contR: en>keys[6]});
+      }
+    });
+    segs.sort((a,b)=>{
+      const ma = a.span>0?0:1, mb = b.span>0?0:1; if(ma!==mb) return ma-mb;
+      if(a.c0!==b.c0) return a.c0-b.c0;
+      if(a.c1!==b.c1) return b.c1-a.c1;
+      const ta = a.e.allDay ? "" : (a.e.start||""), tb = b.e.allDay ? "" : (b.e.start||"");
+      return ta<tb?-1:ta>tb?1:String(a.e.title).localeCompare(String(b.e.title));
+    });
+    const lanes = [];
+    segs.forEach(sg=>{
+      let l = 0;
+      for(;;l++){
+        if(!lanes[l]) lanes[l] = [];
+        if(!lanes[l].some(o=>!(sg.c1<o.c0 || sg.c0>o.c1))) break;
+      }
+      lanes[l].push(sg); sg.lane = l;
+    });
+    return segs;
+  }
   function renderCal(){
     const y = S.cur.getFullYear(), m = S.cur.getMonth();
     const first = new Date(y,m,1);
@@ -517,25 +560,45 @@ const firebaseConfig = {
     const start = addDays(first, -first.getDay());
     const t = todayKey();
     let html = "";
-    for(let i=0;i<weeks*7;i++){
-      const d = addDays(start,i); const k = fmt(d);
-      const evs = eventsOn(k); const marks = marksOn(k);
-      const cls = ["cell"];
-      if(d.getMonth()!==m) cls.push("out");
-      if(k===t) cls.push("today");
-      if(k===S.selected) cls.push("sel");
-      if(d.getDay()===0) cls.push("sun");
-      if(d.getDay()===6) cls.push("sat");
-      const label = niceDate(k)+", 일정 "+evs.length+"개";
-      let inner = '<span class="num">'+d.getDate()+'</span>';
-      if(marks.length) inner += '<span class="mark">♥ '+esc(marks[0])+'</span>';
-      const max = marks.length ? 2 : 3;
-      evs.slice(0,max).forEach(e=>{
-        const bc = e.color||DEFAULT_COLOR[e.who]||COLORS[0];
-        inner += '<span class="blk" data-id="'+esc(e.id)+'" data-k="'+k+'" style="--c:'+esc(bc)+';color:'+textOn(bc)+'">'+esc(e.title)+'</span>';
-      });
-      if(evs.length>max) inner += '<span class="more">+'+(evs.length-max)+'</span>';
-      html += '<button type="button" class="'+cls.join(" ")+'" data-key="'+k+'" aria-label="'+esc(label)+'">'+inner+'</button>';
+    for(let w=0; w<weeks; w++){
+      const keys = []; for(let c=0;c<7;c++) keys.push(fmt(addDays(start, w*7+c)));
+      const segs = weekSegs(keys);
+      const marksW = keys.map(marksOn); const anyMark = marksW.some(x=>x.length);
+      for(let c=0;c<7;c++){
+        const d = addDays(start, w*7+c); const k = keys[c];
+        const here = segs.filter(sg=>sg.c0<=c && c<=sg.c1);
+        const cls = ["cell"];
+        if(d.getMonth()!==m) cls.push("out");
+        if(k===t) cls.push("today");
+        if(k===S.selected) cls.push("sel");
+        if(c===0) cls.push("sun");
+        if(c===6) cls.push("sat");
+        const label = niceDate(k)+", 일정 "+here.length+"개";
+        let inner = '<span class="num">'+d.getDate()+'</span>';
+        if(anyMark) inner += '<span class="mark">'+(marksW[c].length ? '♥ '+esc(marksW[c][0]) : '&nbsp;')+'</span>';
+        const byLane = {}; let last = -1, hidden = 0;
+        here.forEach(sg=>{ if(sg.lane<LANES){ byLane[sg.lane]=sg; if(sg.lane>last) last=sg.lane; } else hidden++; });
+        for(let l=0;l<=last;l++){
+          const sg = byLane[l];
+          if(!sg){ inner += '<span class="blk sp">&nbsp;</span>'; continue; }
+          const e = sg.e; const bc = e.color||DEFAULT_COLOR[e.who]||COLORS[0];
+          const bcls = ["blk"];
+          const multi = sg.c1>sg.c0 || sg.contL || sg.contR;
+          if(c>sg.c0 || (c===0 && sg.contL)) bcls.push("cl");
+          if(c<sg.c1 || (c===6 && sg.contR)) bcls.push("cr");
+          const showTitle = c===sg.c0;
+          const n = sg.c1-c+1;
+          let body;
+          if(!multi) body = esc(e.title);
+          else if(showTitle){
+            if(n>1){ bcls.push("wide"); body = '<span class="bt w" style="--n:'+n+'">'+esc(e.title)+'</span>'; }
+            else body = esc(e.title);
+          } else body = "&nbsp;";
+          inner += '<span class="'+bcls.join(" ")+'" data-id="'+esc(e.id)+'" data-k="'+k+'" style="--c:'+esc(bc)+';color:'+textOn(bc)+'">'+body+'</span>';
+        }
+        if(hidden) inner += '<span class="more">+'+hidden+'</span>';
+        html += '<button type="button" class="'+cls.join(" ")+'" data-key="'+k+'" aria-label="'+esc(label)+'">'+inner+'</button>';
+      }
     }
     document.getElementById("grid").innerHTML = html;
   }
@@ -699,7 +762,7 @@ const firebaseConfig = {
   let drag = null, ghost = null, dropCell = null;
   const gridEl = document.getElementById("grid");
   gridEl.addEventListener("pointerdown", e=>{
-    const b = e.target.closest(".blk"); if(!b || e.button>0) return;
+    const b = e.target.closest(".blk:not(.sp)"); if(!b || !b.dataset.id || e.button>0) return;
     drag = {id:b.dataset.id, from:b.dataset.k, x:e.clientX, y:e.clientY, el:b, active:false, pid:e.pointerId, type:e.pointerType};
     if(e.pointerType!=="mouse") drag.timer = setTimeout(startDrag, 350);
   });
@@ -729,10 +792,13 @@ const firebaseConfig = {
   function startDrag(){
     if(!drag || drag.active) return;
     drag.active = true;
-    ghost = drag.el.cloneNode(true);
-    ghost.classList.add("ghost");
+    ghost = document.createElement("span");
+    ghost.className = "blk ghost";
+    ghost.setAttribute("style", drag.el.getAttribute("style")||"");
+    const gev = S.events.find(x=>x.id===drag.id);
+    ghost.textContent = gev ? gev.title : "";
     document.body.appendChild(ghost);
-    drag.el.classList.add("lifting");
+    document.querySelectorAll('.blk[data-id="'+drag.id.replace(/"/g,"")+'"]').forEach(x=>x.classList.add("lifting"));
     document.body.classList.add("dragging");
     try{ if(navigator.vibrate) navigator.vibrate(15); }catch(e){}
     moveGhost(drag.x, drag.y);
@@ -748,7 +814,7 @@ const firebaseConfig = {
     if(ghost){ ghost.remove(); ghost=null; }
     if(dropCell){ dropCell.classList.remove("drop"); }
     dropCell = null;
-    if(drag && drag.el) drag.el.classList.remove("lifting");
+    document.querySelectorAll(".blk.lifting").forEach(x=>x.classList.remove("lifting"));
     document.body.classList.remove("dragging");
   }
   let toastTimer = null, toastUndo = null;
